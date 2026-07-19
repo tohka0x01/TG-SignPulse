@@ -124,6 +124,10 @@ export interface TaskActionItem {
   value: string;
   aiPrompt: string;
   commandPrefix?: string;
+  /** 发送后等待 Bot 回复秒数，仅 send_text/send_dice */
+  awaitReplySeconds?: string;
+  /** 回复需包含的关键词，可选 */
+  awaitReplyMatch?: string;
 }
 
 // 后端原始 action 结构
@@ -132,6 +136,8 @@ export interface RawTaskAction {
   text?: string;
   dice?: string;
   delay?: number;
+  await_reply_seconds?: number;
+  await_reply_match?: string;
   ai_prompt?: string;
   bot_username?: string;
   command_prefix?: string;
@@ -151,6 +157,8 @@ export interface BuiltAction {
   text?: string;
   dice?: string;
   delay?: string;
+  await_reply_seconds?: number;
+  await_reply_match?: string;
   ai_prompt?: string;
   bot_username?: string;
   command_prefix?: string;

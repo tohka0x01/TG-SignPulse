@@ -1118,3 +1118,52 @@ class TestEdgeCases:
         assert len(config.chats) == 2
         assert config.sign_at == "30 8 * * *"
         assert config.chats[0].actions[0].text == "打卡"
+
+
+class TestAwaitReplyFields:
+    """发送后等待回复字段"""
+
+    def test_send_text_await_reply_fields(self):
+        action = SendTextAction(text="签到", await_reply_seconds=3, await_reply_match="成功")
+        assert action.await_reply_seconds == 3
+        assert action.await_reply_match == "成功"
+
+    def test_requires_updates_when_await_reply(self):
+        chat = SignChatV3(
+            chat_id=1,
+            actions=[SendTextAction(text="签到", await_reply_seconds=3)],
+        )
+        assert chat.requires_updates is True
+
+    def test_requires_updates_false_without_await(self):
+        chat = SignChatV3(
+            chat_id=1,
+            actions=[SendTextAction(text="签到")],
+        )
+        assert chat.requires_updates is False
+
+    def test_load_preserves_await_reply(self):
+        result = SignConfigV3.load(
+            {
+                "sign_at": "0 8 * * *",
+                "chats": [
+                    {
+                        "chat_id": 1,
+                        "actions": [
+                            {
+                                "action": 1,
+                                "text": "签到",
+                                "await_reply_seconds": 5,
+                                "await_reply_match": "ok",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        assert result is not None
+        config, migrated = result
+        action = config.chats[0].actions[0]
+        assert action.await_reply_seconds == 5
+        assert action.await_reply_match == "ok"
+        assert migrated is False

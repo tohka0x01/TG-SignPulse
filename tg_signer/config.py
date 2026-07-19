@@ -218,6 +218,10 @@ class SupportAction(int, Enum):
 class SignAction(BaseModel):
     action: SupportAction
     delay: Optional[str] = None
+    # 发送后可选等待 bot 回复（秒）；0/缺省表示不等，行为与旧版一致
+    await_reply_seconds: Optional[float] = None
+    # 可选：回复文本需包含的关键词（空=任意非自己消息）
+    await_reply_match: Optional[str] = None
 
 
 class SendTextAction(SignAction):
@@ -396,7 +400,17 @@ class SignChatV3(BaseJSONConfig):
             SupportAction.CLICK_BUTTON_BY_CALCULATION_PROBLEM,
             SupportAction.KEYWORD_NOTIFY,
         }
-        return any(action.action in response_actions for action in self.actions)
+        if any(action.action in response_actions for action in self.actions):
+            return True
+        # 发送后等待 bot 回复时需要 updates / 消息缓存
+        for action in self.actions:
+            try:
+                seconds = float(getattr(action, "await_reply_seconds", None) or 0)
+            except (TypeError, ValueError):
+                seconds = 0.0
+            if seconds > 0:
+                return True
+        return False
 
 
 class SignConfigV3(BaseJSONConfig):

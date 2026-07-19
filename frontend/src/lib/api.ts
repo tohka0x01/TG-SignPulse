@@ -595,6 +595,7 @@ export interface GlobalSettings {
   telegram_bot_notify_enabled?: boolean;
   telegram_bot_login_notify_enabled?: boolean;
   telegram_bot_task_failure_enabled?: boolean;
+  telegram_bot_task_success_enabled?: boolean;
   telegram_bot_token?: string | null;
   telegram_bot_chat_id?: string | null;
   telegram_bot_message_thread_id?: number | null;

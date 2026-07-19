@@ -1331,6 +1331,63 @@ class SignTaskService:
                 "Failed to send Telegram failure notification: %s", e
             )
 
+    async def _send_success_notification(
+        self,
+        account_name: str,
+        task_name: str,
+        message: str = "",
+        last_target_message: Optional[str] = None,
+        flow_logs: Optional[List[str]] = None,
+    ) -> None:
+        """Push success result to notify bot when telegram_bot_task_success_enabled."""
+        try:
+            from backend.services.config import get_config_service
+
+            cfg = get_config_service().get_global_settings()
+            if not cfg.get("telegram_bot_notify_enabled"):
+                return
+            if not cfg.get("telegram_bot_task_success_enabled", False):
+                return
+            bot_token = (cfg.get("telegram_bot_token") or "").strip()
+            chat_id = (cfg.get("telegram_bot_chat_id") or "").strip()
+            if not bot_token or not chat_id:
+                return
+            message_thread_id = cfg.get("telegram_bot_message_thread_id")
+            try:
+                message_thread_id = (
+                    int(message_thread_id)
+                    if message_thread_id is not None and str(message_thread_id).strip()
+                    else None
+                )
+            except (TypeError, ValueError):
+                message_thread_id = None
+
+            log_tail = "\n".join((flow_logs or [])[-12:])
+            text_body = (
+                "TG-SignPulse 任务执行成功\n"
+                f"账号: {account_name}\n"
+                f"任务: {task_name}"
+            )
+            if message:
+                text_body += f"\n结果: {message}"
+            if last_target_message:
+                text_body += f"\nBot 回复: {last_target_message}"
+            if log_tail:
+                text_body += f"\n\n最近日志:\n{log_tail}"
+            from backend.services.push_notifications import send_telegram_bot_message
+
+            await send_telegram_bot_message(
+                bot_token=bot_token,
+                chat_id=chat_id,
+                text=text_body,
+                message_thread_id=message_thread_id,
+            )
+        except Exception as e:
+            logging.getLogger("backend.sign_tasks").warning(
+                "Failed to send Telegram success notification: %s", e
+            )
+
+
     async def _send_account_invalid_notification(
         self,
         account_name: str,
@@ -2914,6 +2971,14 @@ class SignTaskService:
                         account_name,
                         task_name,
                         error_msg or msg,
+                        last_target_message=last_target_message or None,
+                        flow_logs=final_logs,
+                    )
+                elif success and not account_invalid_detected:
+                    await self._send_success_notification(
+                        account_name,
+                        task_name,
+                        message=str(msg or ""),
                         last_target_message=last_target_message or None,
                         flow_logs=final_logs,
                     )

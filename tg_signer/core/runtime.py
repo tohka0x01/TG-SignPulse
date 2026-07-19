@@ -2364,6 +2364,146 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
             return clicked > 0
         return False
 
+    def _await_reply_seconds(self, action: ActionT) -> float:
+        raw = getattr(action, "await_reply_seconds", None)
+        if raw is None:
+            return 0.0
+        try:
+            return max(float(raw), 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _await_reply_match(self, action: ActionT) -> str:
+        raw = getattr(action, "await_reply_match", None)
+        if raw is None:
+            return ""
+        return str(raw).strip()
+
+    def _message_is_from_self(self, message: Message) -> bool:
+        if message is None:
+            return True
+        from_user = getattr(message, "from_user", None)
+        if from_user is not None and bool(getattr(from_user, "is_self", False)):
+            return True
+        # 没有 from_user 时：outgoing 通常是自己发的
+        if bool(getattr(message, "outgoing", False)):
+            return True
+        return False
+
+    def _message_matches_await_filter(
+        self,
+        message: Message,
+        chat: SignChatV3,
+        match_text: str,
+        *,
+        min_message_id: int = 0,
+    ) -> bool:
+        if message is None:
+            return False
+        if not self._message_matches_chat_thread(message, chat):
+            return False
+        msg_id = int(getattr(message, "id", 0) or 0)
+        if min_message_id and msg_id <= min_message_id:
+            return False
+        if self._message_is_from_self(message):
+            return False
+        if not match_text:
+            return True
+        body = f"{getattr(message, 'text', None) or ''} {getattr(message, 'caption', None) or ''}"
+        return match_text.lower() in body.lower()
+
+    async def _await_bot_reply_after_send(
+        self,
+        chat: SignChatV3,
+        *,
+        timeout: float,
+        match_text: str = "",
+        min_message_id: int = 0,
+    ) -> Optional[Message]:
+        """发送后等待 bot 回复。超时返回 None，不抛错。"""
+        timeout = max(float(timeout or 0), 0.0)
+        if timeout <= 0:
+            return None
+
+        self.log(
+            f"等待 Bot 回复（最多 {timeout:g} 秒）"
+            + (f"，需包含: {match_text}" if match_text else "")
+        )
+        deadline = time.perf_counter() + timeout
+        history_limit = _read_positive_int_env("SIGN_TASK_HISTORY_LOOKBACK", 12, 3)
+
+        # 先扫缓存（updates 路径）
+        while time.perf_counter() < deadline:
+            messages_dict = self.context.chat_messages.get(chat.chat_id) or {}
+            for message in reversed(list(messages_dict.values())):
+                if self._message_matches_await_filter(
+                    message,
+                    chat,
+                    match_text,
+                    min_message_id=min_message_id,
+                ):
+                    self._log_received_target_message(message)
+                    return message
+            # 再轻量扫历史兜底
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                break
+            try:
+                async for message in self.app.get_chat_history(
+                    chat.chat_id,
+                    limit=history_limit,
+                ):
+                    if self._message_matches_await_filter(
+                        message,
+                        chat,
+                        match_text,
+                        min_message_id=min_message_id,
+                    ):
+                        # 写入缓存，便于后续步骤复用
+                        self.context.chat_messages[chat.chat_id][message.id] = message
+                        self._log_received_target_message(message)
+                        return message
+                    # 历史按新到旧；遇到更旧 id 可提前停
+                    msg_id = int(getattr(message, "id", 0) or 0)
+                    if min_message_id and msg_id and msg_id < min_message_id:
+                        break
+            except Exception as exc:
+                self.log(
+                    f"等待回复时读取历史失败: {type(exc).__name__}: {safe_text_preview(exc, 80)}",
+                    level="WARNING",
+                )
+            await asyncio.sleep(0.35)
+
+        self.log(f"未在 {timeout:g} 秒内等到 Bot 回复", level="WARNING")
+        return None
+
+    async def _maybe_await_reply_after_send(
+        self,
+        chat: SignChatV3,
+        action: ActionT,
+        sent_message: Any = None,
+    ) -> bool:
+        seconds = self._await_reply_seconds(action)
+        if seconds <= 0:
+            return True
+        min_id = 0
+        if sent_message is not None:
+            try:
+                min_id = int(getattr(sent_message, "id", 0) or 0)
+            except (TypeError, ValueError):
+                min_id = 0
+        reply = await self._await_bot_reply_after_send(
+            chat,
+            timeout=seconds,
+            match_text=self._await_reply_match(action),
+            min_message_id=min_id,
+        )
+        if reply is not None:
+            summary = self._summarize_target_message(reply)
+            if summary:
+                self.log(f"任务对象最后一条消息: {summary}")
+        return True
+
     async def wait_for(
         self,
         chat: SignChatV3,
@@ -2378,9 +2518,17 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
         if chat.message_thread_id is not None:
             kwargs["message_thread_id"] = chat.message_thread_id
         if isinstance(action, SendTextAction):
-            return await self.send_message(chat.chat_id, action.text, chat.delete_after, **kwargs)
+            sent = await self.send_message(
+                chat.chat_id, action.text, chat.delete_after, **kwargs
+            )
+            await self._maybe_await_reply_after_send(chat, action, sent)
+            return sent
         elif isinstance(action, SendDiceAction):
-            return await self.send_dice(chat.chat_id, action.dice, chat.delete_after, **kwargs)
+            sent = await self.send_dice(
+                chat.chat_id, action.dice, chat.delete_after, **kwargs
+            )
+            await self._maybe_await_reply_after_send(chat, action, sent)
+            return sent
         elif isinstance(action, KeywordNotifyAction):
             self.log("关键词监听通知动作为后台常驻监听配置，当前运行时跳过")
             return True

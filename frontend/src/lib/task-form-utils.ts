@@ -74,6 +74,15 @@ export function parseSingleAction(raw: RawTaskAction): TaskActionItem[] {
       break
   }
 
+  if (type === 'send_text' || type === 'send_dice') {
+    if (raw.await_reply_seconds != null && Number(raw.await_reply_seconds) > 0) {
+      item.awaitReplySeconds = String(raw.await_reply_seconds)
+    }
+    if (raw.await_reply_match) {
+      item.awaitReplyMatch = String(raw.await_reply_match)
+    }
+  }
+
   items.push(item)
   return items
 }
@@ -126,6 +135,18 @@ export function buildSingleAction(
       result.bot_username = action.value
       result.command_prefix = action.commandPrefix || DEFAULT_CMD_PREFIX
       break
+  }
+
+  // 发送后等待 Bot 回复（仅 send_text / send_dice）
+  if (action.type === 'send_text' || action.type === 'send_dice') {
+    const secs = Number(action.awaitReplySeconds)
+    if (Number.isFinite(secs) && secs > 0) {
+      result.await_reply_seconds = secs
+    }
+    const match = (action.awaitReplyMatch || '').trim()
+    if (match) {
+      result.await_reply_match = match
+    }
   }
 
   // 从前一个 delay 动作获取延迟值

@@ -51,6 +51,7 @@ const settings = ref({
   botEnabled: false,
   botLoginNotify: false,
   botTaskFailure: false,
+  botTaskSuccess: false,
   botToken: '',
   botChatId: '',
   botThreadId: '',
@@ -294,6 +295,7 @@ onMounted(async () => {
     settings.value.botEnabled = res.telegram_bot_notify_enabled || false
     settings.value.botLoginNotify = res.telegram_bot_login_notify_enabled || false
     settings.value.botTaskFailure = res.telegram_bot_task_failure_enabled || false
+    settings.value.botTaskSuccess = res.telegram_bot_task_success_enabled || false
     settings.value.botToken = res.telegram_bot_token || ''
     settings.value.botChatId = res.telegram_bot_chat_id || ''
     settings.value.botThreadId = res.telegram_bot_message_thread_id ? String(res.telegram_bot_message_thread_id) : ''
@@ -380,6 +382,7 @@ const saveBotSettings = async () => {
       telegram_bot_notify_enabled: settings.value.botEnabled,
       telegram_bot_login_notify_enabled: settings.value.botLoginNotify,
       telegram_bot_task_failure_enabled: settings.value.botTaskFailure,
+      telegram_bot_task_success_enabled: settings.value.botTaskSuccess,
       telegram_bot_token: settings.value.botToken || null,
       telegram_bot_chat_id: settings.value.botChatId || null,
       telegram_bot_message_thread_id: settings.value.botThreadId ? parseInt(settings.value.botThreadId) : null,
@@ -719,6 +722,10 @@ const handleImport = async (e: Event) => {
               <label class="flex items-center gap-2 cursor-pointer group">
                 <input v-model="settings.botTaskFailure" type="checkbox" class="w-4 h-4 accent-sky-500 bg-gray-100 border-gray-300 rounded focus:ring-0 dark:bg-gray-800 dark:border-gray-600">
                 <span class="text-sm text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors">{{ t('settings.taskFailNotify') }}</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer group">
+                <input v-model="settings.botTaskSuccess" type="checkbox" class="w-4 h-4 accent-sky-500 bg-gray-100 border-gray-300 rounded focus:ring-0 dark:bg-gray-800 dark:border-gray-600">
+                <span class="text-sm text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors">{{ t('settings.taskSuccessNotify') }}</span>
               </label>
             </div>
             <div class="pt-2">

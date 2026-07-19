@@ -392,6 +392,7 @@ class GlobalSettingsRequest(BaseModel):
     telegram_bot_notify_enabled: Optional[bool] = None
     telegram_bot_login_notify_enabled: Optional[bool] = None
     telegram_bot_task_failure_enabled: Optional[bool] = None
+    telegram_bot_task_success_enabled: Optional[bool] = None
     telegram_bot_token: Optional[str] = None
     telegram_bot_chat_id: Optional[str] = None
     telegram_bot_message_thread_id: Optional[int] = None
@@ -409,6 +410,7 @@ class GlobalSettingsResponse(BaseModel):
     telegram_bot_notify_enabled: bool = False
     telegram_bot_login_notify_enabled: bool = False
     telegram_bot_task_failure_enabled: bool = True
+    telegram_bot_task_success_enabled: bool = False
     telegram_bot_token: Optional[str] = None
     telegram_bot_chat_id: Optional[str] = None
     telegram_bot_message_thread_id: Optional[int] = None
@@ -461,6 +463,8 @@ async def save_global_settings(
             settings["telegram_bot_login_notify_enabled"] = request.telegram_bot_login_notify_enabled
         if "telegram_bot_task_failure_enabled" in fields_set:
             settings["telegram_bot_task_failure_enabled"] = request.telegram_bot_task_failure_enabled
+        if "telegram_bot_task_success_enabled" in fields_set:
+            settings["telegram_bot_task_success_enabled"] = request.telegram_bot_task_success_enabled
         if "telegram_bot_token" in fields_set:
             settings["telegram_bot_token"] = request.telegram_bot_token
         if "telegram_bot_chat_id" in fields_set:
