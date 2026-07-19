@@ -1339,7 +1339,7 @@ class SignTaskService:
         last_target_message: Optional[str] = None,
         flow_logs: Optional[List[str]] = None,
     ) -> None:
-        """Push success result to notify bot when telegram_bot_task_success_enabled."""
+        """成功推送：只发 Bot 回复正文，不附整段执行日志。"""
         try:
             from backend.services.config import get_config_service
 
@@ -1362,18 +1362,26 @@ class SignTaskService:
             except (TypeError, ValueError):
                 message_thread_id = None
 
-            log_tail = "\n".join((flow_logs or [])[-12:])
+            # 优先 last_target_message，其次 message（调用方传入的 last_reply）
+            # flow_logs 仅作兜底抽取，绝不整段拼进推送
+            reply_text = (last_target_message or message or "").strip()
+            if not reply_text and flow_logs:
+                reply_text = (extract_last_target_message(flow_logs) or "").strip()
+            if not reply_text:
+                reply_text = "（无回复内容）"
+
+            # 去掉可能残留的标签前缀，只保留正文
+            for prefix in ("Bot 回复:", "Bot 回复：", "结果:", "结果："):
+                if reply_text.startswith(prefix):
+                    reply_text = reply_text[len(prefix) :].strip()
+                    break
+
             text_body = (
-                "TG-SignPulse 任务执行成功\n"
+                "TG-SignPulse 任务成功\n"
                 f"账号: {account_name}\n"
-                f"任务: {task_name}"
+                f"任务: {task_name}\n"
+                f"{reply_text}"
             )
-            if message:
-                text_body += f"\n结果: {message}"
-            if last_target_message:
-                text_body += f"\nBot 回复: {last_target_message}"
-            if log_tail:
-                text_body += f"\n\n最近日志:\n{log_tail}"
             from backend.services.push_notifications import send_telegram_bot_message
 
             await send_telegram_bot_message(

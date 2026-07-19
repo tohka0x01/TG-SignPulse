@@ -278,6 +278,100 @@ class TestTaskStepLogCapture:
         assert any("step 1/2 send_text" in line for line in sink)
 
 
+class TestSuccessNotificationContent:
+    """成功 TG 推送只含回复正文，不含执行日志尾。"""
+
+    @pytest.mark.asyncio
+    async def test_success_push_is_reply_only(self, monkeypatch):
+        from backend.services.sign_tasks import SignTaskService
+
+        captured: dict = {}
+
+        async def fake_send(**kwargs):
+            captured.update(kwargs)
+
+        class FakeConfig:
+            def get_global_settings(self):
+                return {
+                    "telegram_bot_notify_enabled": True,
+                    "telegram_bot_task_success_enabled": True,
+                    "telegram_bot_token": "tok",
+                    "telegram_bot_chat_id": "123",
+                    "telegram_bot_message_thread_id": None,
+                }
+
+        monkeypatch.setattr(
+            "backend.services.config.get_config_service",
+            lambda: FakeConfig(),
+        )
+        monkeypatch.setattr(
+            "backend.services.push_notifications.send_telegram_bot_message",
+            fake_send,
+        )
+
+        svc = SignTaskService.__new__(SignTaskService)
+        await svc._send_success_notification(
+            account_name="acc1",
+            task_name="task1",
+            message="签到成功 +10",
+            last_target_message="签到成功 +10",
+            flow_logs=[
+                "开始执行任务: task1",
+                "正在执行第 1/2 步",
+                "已发送文本",
+                "任务对象最后一条消息: 签到成功 +10",
+                "任务执行完成",
+            ],
+        )
+
+        text = captured.get("text") or ""
+        assert "签到成功 +10" in text
+        assert "账号: acc1" in text
+        assert "任务: task1" in text
+        assert "最近日志" not in text
+        assert "开始执行任务" not in text
+        assert "正在执行第" not in text
+        assert "任务执行完成" not in text
+
+    @pytest.mark.asyncio
+    async def test_success_push_fallback_extracts_from_logs(self, monkeypatch):
+        from backend.services.sign_tasks import SignTaskService
+
+        captured: dict = {}
+
+        async def fake_send(**kwargs):
+            captured.update(kwargs)
+
+        class FakeConfig:
+            def get_global_settings(self):
+                return {
+                    "telegram_bot_notify_enabled": True,
+                    "telegram_bot_task_success_enabled": True,
+                    "telegram_bot_token": "tok",
+                    "telegram_bot_chat_id": "123",
+                }
+
+        monkeypatch.setattr(
+            "backend.services.config.get_config_service",
+            lambda: FakeConfig(),
+        )
+        monkeypatch.setattr(
+            "backend.services.push_notifications.send_telegram_bot_message",
+            fake_send,
+        )
+
+        svc = SignTaskService.__new__(SignTaskService)
+        await svc._send_success_notification(
+            account_name="a",
+            task_name="t",
+            message="",
+            last_target_message=None,
+            flow_logs=["noise", "任务对象最后一条消息: hello bot"],
+        )
+        assert "hello bot" in (captured.get("text") or "")
+        assert "最近日志" not in (captured.get("text") or "")
+
+
 # 运行测试的辅助函数
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
