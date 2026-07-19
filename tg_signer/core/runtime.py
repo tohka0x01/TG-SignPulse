@@ -418,6 +418,7 @@ class BaseUserWorker(Generic[ConfigT]):
             lambda: self.app.send_message(chat_id, text, **kwargs),
             operation=f"发送消息到 {chat_id}",
         )
+        self._cache_outgoing_message(chat_id, message)
         self.log(
             f"已发送文本消息到 {chat_id}: {text}"
             + (
@@ -464,6 +465,7 @@ class BaseUserWorker(Generic[ConfigT]):
             lambda: self.app.send_dice(chat_id, emoji, **kwargs),
             operation=f"发送骰子到 {chat_id}",
         )
+        self._cache_outgoing_message(chat_id, message)
         self.log(
             f"已发送骰子到 {chat_id}: {emoji}"
             + (
@@ -2384,6 +2386,31 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
             return True
         return False
 
+    def _cache_outgoing_message(self, chat_id: Union[int, str], message: Optional[Message]) -> None:
+        """把本账号发出的消息写入缓存，供后续「等待回复」锚定基线。"""
+        if message is None:
+            return
+        try:
+            mid = int(getattr(message, "id", 0) or 0)
+        except (TypeError, ValueError):
+            mid = 0
+        if not mid:
+            return
+        try:
+            key = int(chat_id) if not isinstance(chat_id, int) else chat_id
+        except (TypeError, ValueError):
+            key = chat_id
+        try:
+            chat_msgs = self.context.chat_messages[key]
+            chat_msgs[mid] = message
+            if len(chat_msgs) > 200:
+                oldest_keys = sorted(chat_msgs.keys())[:100]
+                for k in oldest_keys:
+                    chat_msgs.pop(k, None)
+        except Exception:
+            # context 尚未初始化时忽略（CLI 单发场景）
+            pass
+
     def _message_matches_await_filter(
         self,
         message: Message,
@@ -2407,10 +2434,21 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
         return match_text.lower() in body.lower()
 
     def _await_reply_baseline_message_id_from_cache(self, chat: SignChatV3) -> int:
-        """取当前缓存中最大消息 id。"""
+        """
+        取「自己发出的最后一条消息 id」作为基线。
+
+        不能用缓存中的全局最大 id：bot 若已先回复，会把 bot 消息 id 当成基线，
+        随后过滤条件 msg_id <= min_id 会把该回复永久排除。
+        """
         messages_dict = self.context.chat_messages.get(chat.chat_id) or {}
         max_id = 0
         for message in messages_dict.values():
+            if message is None:
+                continue
+            if not self._message_is_from_self(message):
+                continue
+            if not self._message_matches_chat_thread(message, chat):
+                continue
             try:
                 mid = int(getattr(message, "id", 0) or 0)
             except (TypeError, ValueError):
@@ -2420,17 +2458,36 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
         return max_id
 
     async def _await_reply_baseline_message_id(self, chat: SignChatV3) -> int:
-        """等待开始时的消息 id 基线：只接受之后的新消息。"""
+        """
+        等待开始时的消息 id 基线：只接受「本账号触发动作之后」的对方消息。
+
+        优先用缓存中自己发出的消息；缓存没有时再扫最近历史找 outgoing。
+        绝不采用「会话最新任意消息」——那会把已到的 bot 回复排除掉。
+        """
         max_id = self._await_reply_baseline_message_id_from_cache(chat)
+        if max_id > 0:
+            return max_id
+
+        history_limit = _read_positive_int_env("SIGN_TASK_HISTORY_LOOKBACK", 12, 3)
         try:
-            async for message in self.app.get_chat_history(chat.chat_id, limit=1):
+            async for message in self.app.get_chat_history(
+                chat.chat_id,
+                limit=history_limit,
+            ):
+                if message is None:
+                    continue
+                if not self._message_matches_chat_thread(message, chat):
+                    continue
+                if not self._message_is_from_self(message):
+                    continue
                 try:
                     mid = int(getattr(message, "id", 0) or 0)
                 except (TypeError, ValueError):
                     mid = 0
                 if mid > max_id:
                     max_id = mid
-                break
+                    # 历史按新到旧；找到自己最新一条即可停
+                    break
         except Exception:
             pass
         return max_id
@@ -2451,6 +2508,7 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
         self.log(
             f"等待 Bot 回复（最多 {timeout:g} 秒）"
             + (f"，需包含: {match_text}" if match_text else "")
+            + (f"，消息 id > {min_message_id}" if min_message_id else "")
         )
         deadline = time.perf_counter() + timeout
         history_limit = _read_positive_int_env("SIGN_TASK_HISTORY_LOOKBACK", 12, 3)

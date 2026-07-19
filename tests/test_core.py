@@ -37,7 +37,7 @@ from tg_signer.core import (
     _CLIENT_REFS,
     _CLIENT_ASYNC_LOCKS,
 )
-from tg_signer.config import SendTextAction, SendDiceAction
+from tg_signer.config import SendTextAction, SendDiceAction, SignChatV3
 
 
 # ============================================================================
@@ -717,6 +717,104 @@ class TestUserSignerContext:
         assert ctx1 is not ctx2
         ctx1.waiter.add(1)
         assert 1 not in ctx2.waiter.waiting_ids
+
+
+# ============================================================================
+# 等待 Bot 回复：基线 message id
+# ============================================================================
+
+
+class TestAwaitReplyBaseline:
+    """AWAIT_REPLY 的 min_message_id 必须锚定「自己发出的消息」，不能用会话最新 id。"""
+
+    def _make_signer(self):
+        signer = UserSigner.__new__(UserSigner)
+        signer.context = signer.ensure_ctx()
+        signer.app = MagicMock()
+        signer.log = MagicMock()
+        return signer
+
+    def _self_msg(self, msg_id: int):
+        return SimpleNamespace(
+            id=msg_id,
+            text=f"self-{msg_id}",
+            caption=None,
+            outgoing=True,
+            from_user=SimpleNamespace(is_self=True),
+            message_thread_id=None,
+            reply_to_top_message_id=None,
+        )
+
+    def _bot_msg(self, msg_id: int, text: str = "签到成功"):
+        return SimpleNamespace(
+            id=msg_id,
+            text=text,
+            caption=None,
+            outgoing=False,
+            from_user=SimpleNamespace(is_self=False),
+            message_thread_id=None,
+            reply_to_top_message_id=None,
+        )
+
+    def test_baseline_uses_self_message_not_latest_bot(self):
+        """缓存里已有 bot 回复时，基线仍应是自己发出的消息 id。"""
+        signer = self._make_signer()
+        chat = SignChatV3(chat_id=12345, actions=[SendTextAction(text="/sign")])
+        # 自己先发 10，bot 已回 11
+        signer.context.chat_messages[12345][10] = self._self_msg(10)
+        signer.context.chat_messages[12345][11] = self._bot_msg(11)
+
+        baseline = signer._await_reply_baseline_message_id_from_cache(chat)
+        assert baseline == 10
+
+    def test_filter_accepts_bot_after_self_baseline(self):
+        """基线=自己消息 id 时，已到的 bot 回复应被接受。"""
+        signer = self._make_signer()
+        chat = SignChatV3(chat_id=12345, actions=[SendTextAction(text="/sign")])
+        bot = self._bot_msg(11, "签到成功")
+        assert (
+            signer._message_matches_await_filter(
+                bot, chat, match_text="", min_message_id=10
+            )
+            is True
+        )
+        # 旧逻辑用最新 id=11 作基线会把 bot 自己排除
+        assert (
+            signer._message_matches_await_filter(
+                bot, chat, match_text="", min_message_id=11
+            )
+            is False
+        )
+
+    def test_cache_outgoing_message_sets_baseline(self):
+        """send 后缓存的 outgoing 消息应成为基线。"""
+        signer = self._make_signer()
+        chat = SignChatV3(chat_id=99, actions=[SendTextAction(text="/sign")])
+        sent = self._self_msg(42)
+        signer._cache_outgoing_message(99, sent)
+        assert 42 in signer.context.chat_messages[99]
+        assert signer._await_reply_baseline_message_id_from_cache(chat) == 42
+
+    @pytest.mark.asyncio
+    async def test_await_bot_reply_finds_already_arrived_bot(self):
+        """bot 在进入等待前已到达时，应立即命中而不是超时。"""
+        signer = self._make_signer()
+        chat = SignChatV3(chat_id=7, actions=[SendTextAction(text="/sign")])
+        signer.context.chat_messages[7][1] = self._self_msg(1)
+        bot = self._bot_msg(2, "成功")
+        signer.context.chat_messages[7][2] = bot
+
+        # 历史为空：只靠缓存命中
+        async def _empty_history(*_a, **_k):
+            if False:
+                yield None
+
+        signer.app.get_chat_history = _empty_history
+
+        reply = await signer._await_bot_reply(
+            chat, timeout=1.0, match_text="", min_message_id=1
+        )
+        assert reply is bot
 
 
 # ============================================================================
