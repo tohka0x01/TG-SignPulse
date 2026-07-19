@@ -23,8 +23,6 @@ from backend.utils.storage import (
     save_data_dir_override,
 )
 
-settings = get_settings()
-
 
 class ConfigService:
     """配置管理服务类"""
@@ -70,7 +68,8 @@ class ConfigService:
                 return False
 
     def __init__(self):
-        self.workdir = settings.resolve_workdir()
+        # 每次实例化时读取当前环境，避免模块导入期 settings 缓存导致测试串扰
+        self.workdir = get_settings().resolve_workdir()
         self.signs_dir = self.workdir / "signs"
         self.monitors_dir = self.workdir / "monitors"
 

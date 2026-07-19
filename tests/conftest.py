@@ -92,7 +92,17 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch, temp_data_dir: Path) -> Iterat
     monkeypatch.setenv("APP_SECRET_KEY", "test-secret-key")
     monkeypatch.setenv("TG_API_ID", "12345")
     monkeypatch.setenv("TG_API_HASH", "test-api-hash")
-    yield temp_data_dir
+    # 让 ConfigService / Settings 重新解析到本用例的临时目录
+    from backend.core import config as config_module
+    from backend.services import config as config_service_module
+
+    config_module.get_settings.cache_clear()
+    config_service_module._config_service = None
+    try:
+        yield temp_data_dir
+    finally:
+        config_module.get_settings.cache_clear()
+        config_service_module._config_service = None
 
 
 @pytest.fixture(autouse=True)
