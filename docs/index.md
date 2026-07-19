@@ -22,7 +22,7 @@ hero:
       link: /deploy/docker
     - theme: alt
       text: GitHub
-      link: https://github.com/Silentely/TG-SignPulse
+      link: https://github.com/tohka0x01/TG-SignPulse
 
 features:
   - icon: 👥

@@ -398,7 +398,7 @@
     "updateCheckDisabled": "Server-side update check is disabled; tried browser → GitHub instead.",
     "updateCheckFailed": "Update check failed: {error}",
     "openRelease": "Open release page",
-    "upgradeDockerHint": "Docker upgrade: docker pull ghcr.io/silentely/tg-signpulse:latest",
+    "upgradeDockerHint": "Docker upgrade: docker pull ghcr.io/tohka0x01/tg-signpulse:latest",
     "unknownValue": "unknown"
   },
   "profile": {

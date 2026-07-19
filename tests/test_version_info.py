@@ -57,7 +57,7 @@ class TestResolveVersion:
 
 class TestValidateUrl:
     def test_https_ok(self):
-        url = "https://api.github.com/repos/Silentely/TG-SignPulse/releases/latest"
+        url = "https://api.github.com/repos/tohka0x01/TG-SignPulse/releases/latest"
         assert validate_update_check_url(url) == url
 
     def test_http_rejected(self):
@@ -130,7 +130,7 @@ class TestRemoteCheck:
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
             "tag_name": "v2.1.0",
-            "html_url": "https://github.com/Silentely/TG-SignPulse/releases/tag/v2.1.0",
+            "html_url": "https://github.com/tohka0x01/TG-SignPulse/releases/tag/v2.1.0",
         }
         mock_resp.raise_for_status = MagicMock()
         mock_client = MagicMock()

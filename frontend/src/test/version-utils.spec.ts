@@ -62,7 +62,7 @@ describe('version-utils', () => {
       ok: true,
       json: async () => ({
         tag_name: 'v3.0.0',
-        html_url: 'https://github.com/Silentely/TG-SignPulse/releases/tag/v3.0.0',
+        html_url: 'https://github.com/tohka0x01/TG-SignPulse/releases/tag/v3.0.0',
       }),
     })
     vi.stubGlobal('fetch', mockFetch)

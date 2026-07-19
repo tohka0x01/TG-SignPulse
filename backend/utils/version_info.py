@@ -24,7 +24,7 @@ import httpx
 logger = logging.getLogger("backend.version_info")
 
 DEFAULT_UPDATE_CHECK_URL = (
-    "https://api.github.com/repos/Silentely/TG-SignPulse/releases/latest"
+    "https://api.github.com/repos/tohka0x01/TG-SignPulse/releases/latest"
 )
 UPDATE_CACHE_TTL_SECONDS = 6 * 3600
 _HTTP_TIMEOUT_SECONDS = 8.0

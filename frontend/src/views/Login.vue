@@ -74,7 +74,7 @@ const handleLogin = async () => {
 }
 
 const openGithub = () => {
-  window.open('https://github.com/Silentely/TG-SignPulse', '_blank')
+  window.open('https://github.com/tohka0x01/TG-SignPulse', '_blank')
 }
 </script>
 

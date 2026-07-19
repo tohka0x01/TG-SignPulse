@@ -1,7 +1,7 @@
 /** 前端版本比较、GitHub 回退检查与本地缓存。 */
 
 export const DEFAULT_GITHUB_RELEASES_URL =
-  'https://api.github.com/repos/Silentely/TG-SignPulse/releases/latest'
+  'https://api.github.com/repos/tohka0x01/TG-SignPulse/releases/latest'
 
 const CACHE_KEY = 'tg_signpulse_update_check_v1'
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000
