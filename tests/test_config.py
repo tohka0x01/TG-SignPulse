@@ -28,6 +28,7 @@ from tg_signer.config import (
     ReplyByCalculationProblemAction,
     ReplyByImageRecognitionAction,
     SendDiceAction,
+    AwaitReplyAction,
     SendTextAction,
     SignAction,
     SignChatV3,
@@ -133,6 +134,7 @@ class TestSupportAction:
         assert SupportAction.REPLY_BY_IMAGE_RECOGNITION == 6
         assert SupportAction.CLICK_BUTTON_BY_CALCULATION_PROBLEM == 7
         assert SupportAction.KEYWORD_NOTIFY == 8
+        assert SupportAction.AWAIT_REPLY == 10
 
     def test_desc_property(self):
         """desc 属性返回中文描述"""
@@ -140,6 +142,7 @@ class TestSupportAction:
         assert SupportAction.SEND_DICE.desc == "发送Dice类型的emoji"
         assert SupportAction.CLICK_KEYBOARD_BY_TEXT.desc == "根据文本点击键盘"
         assert SupportAction.KEYWORD_NOTIFY.desc == "关键词监听"
+        assert SupportAction.AWAIT_REPLY.desc == "等待Bot回复"
 
     def test_all_actions_have_desc(self):
         """所有枚举成员都有 desc 属性"""
@@ -1120,18 +1123,19 @@ class TestEdgeCases:
         assert config.chats[0].actions[0].text == "打卡"
 
 
-class TestAwaitReplyFields:
-    """发送后等待回复字段"""
+class TestAwaitReplyAction:
+    """独立「等待 Bot 回复」动作"""
 
-    def test_send_text_await_reply_fields(self):
-        action = SendTextAction(text="签到", await_reply_seconds=3, await_reply_match="成功")
-        assert action.await_reply_seconds == 3
-        assert action.await_reply_match == "成功"
+    def test_await_reply_fields(self):
+        action = AwaitReplyAction(timeout=15, match="成功")
+        assert action.action == SupportAction.AWAIT_REPLY
+        assert action.timeout == 15
+        assert action.match == "成功"
 
     def test_requires_updates_when_await_reply(self):
         chat = SignChatV3(
             chat_id=1,
-            actions=[SendTextAction(text="签到", await_reply_seconds=3)],
+            actions=[AwaitReplyAction(timeout=10)],
         )
         assert chat.requires_updates is True
 
@@ -1151,10 +1155,9 @@ class TestAwaitReplyFields:
                         "chat_id": 1,
                         "actions": [
                             {
-                                "action": 1,
-                                "text": "签到",
-                                "await_reply_seconds": 5,
-                                "await_reply_match": "ok",
+                                "action": 10,
+                                "timeout": 5,
+                                "match": "ok",
                             }
                         ],
                     }
@@ -1164,6 +1167,7 @@ class TestAwaitReplyFields:
         assert result is not None
         config, migrated = result
         action = config.chats[0].actions[0]
-        assert action.await_reply_seconds == 5
-        assert action.await_reply_match == "ok"
+        assert isinstance(action, AwaitReplyAction)
+        assert action.timeout == 5
+        assert action.match == "ok"
         assert migrated is False

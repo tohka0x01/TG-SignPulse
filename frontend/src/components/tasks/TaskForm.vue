@@ -76,7 +76,7 @@ const listenerForwardChatId = ref('')
 const listenerForwardThreadId = ref('')
 const listenerBarkUrl = ref('')
 const listenerCustomUrl = ref('')
-const actions = ref<TaskActionItem[]>([{ id: nextActionId(), type: 'send_text', value: '', aiPrompt: '', awaitReplySeconds: '', awaitReplyMatch: '' }])
+const actions = ref<TaskActionItem[]>([{ id: nextActionId(), type: 'send_text', value: '', aiPrompt: '' }])
 
 const loadAccounts = async () => {
   try {
@@ -203,7 +203,7 @@ const removeTargetChat = (idx: number) => {
     activeChatIndex.value = targetChats.value.length - 1
   }
 }
-const addAction=()=>actions.value.push({id:nextActionId(),type:'send_text',value:'',aiPrompt:'',awaitReplySeconds:'',awaitReplyMatch:''})
+const addAction=()=>actions.value.push({id:nextActionId(),type:'send_text',value:'',aiPrompt:''})
 const removeAction=(i:number)=>actions.value.splice(i,1)
 const moveAction=(i:number,d:number)=>{if(i+d<0||i+d>=actions.value.length)return;const t=actions.value[i];actions.value[i]=actions.value[i+d];actions.value[i+d]=t}
 const buildPayload = () => {
@@ -378,6 +378,7 @@ onMounted(()=>{loadAccounts()})
               {label: t('taskForm.aiCalc'), value:'_ai_calc', disabled:true},
               {label: t('taskForm.calcSend'), value:'calc_send', indent:true},
               {label: t('taskForm.calcClick'), value:'calc_click', indent:true},
+              {label: t('taskForm.awaitReply'), value:'await_reply'},
               {label: t('taskForm.delay'), value:'delay'},
             ]" className="w-full" />
           </div>
@@ -391,11 +392,11 @@ onMounted(()=>{loadAccounts()})
               <input v-model="action.commandPrefix" :placeholder="t('taskForm.commandPrefixPlaceholder')" class="ui-input !h-9 !text-xs !px-2 mt-1" />
             </template>
             <input v-else-if="['vision_send','vision_click','calc_send','calc_click'].includes(action.type)" v-model="action.aiPrompt" :placeholder="t('taskForm.aiPromptPlaceholder')" class="ui-input !h-9 !text-xs !px-2" />
+            <template v-else-if="action.type === 'await_reply'">
+              <input v-model="action.awaitReplySeconds" :placeholder="t('taskForm.awaitReplySecondsPlaceholder')" class="ui-input !h-9 !text-xs !px-2" />
+              <input v-model="action.awaitReplyMatch" :placeholder="t('taskForm.awaitReplyMatchPlaceholder')" class="ui-input !h-9 !text-xs !px-2 mt-1" />
+            </template>
             <span v-else class="h-9 flex items-center text-xs text-gray-400 px-2">-</span>
-            <div v-if="action.type === 'send_text' || action.type === 'send_dice'" class="mt-1 flex flex-col sm:flex-row gap-1">
-              <input v-model="action.awaitReplySeconds" :placeholder="t('taskForm.awaitReplySecondsPlaceholder')" class="ui-input !h-8 !text-[11px] !px-2 sm:w-28" />
-              <input v-model="action.awaitReplyMatch" :placeholder="t('taskForm.awaitReplyMatchPlaceholder')" class="ui-input !h-8 !text-[11px] !px-2 flex-1" />
-            </div>
           </div>
           <!-- Move & Delete -->
           <div class="flex items-center gap-0.5 shrink-0">

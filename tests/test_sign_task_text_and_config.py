@@ -43,6 +43,12 @@ def test_task_requires_updates_conservative():
         )
         is True
     )
+    assert (
+        task_requires_updates(
+            {"chats": [{"actions": [{"action": 10, "timeout": 5}]}]}
+        )
+        is True
+    )
 
 
 def test_task_has_keyword_monitor():

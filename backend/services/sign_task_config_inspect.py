@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 # 依赖消息回包/按钮/AI 的动作类型（与 SignAction 编号对齐）
-_RESPONSE_ACTION_IDS = frozenset({3, 4, 5, 6, 7, 8})
+_RESPONSE_ACTION_IDS = frozenset({3, 4, 5, 6, 7, 8, 10})
 _KEYWORD_MONITOR_ACTION_ID = 8
 
 

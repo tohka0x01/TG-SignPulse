@@ -34,6 +34,7 @@ except ImportError:  # pragma: no cover - pydantic v1 compatibility
 
 from tg_signer.config import (
     ActionT,
+    AwaitReplyAction,
     BaseJSONConfig,
     ChooseOptionByImageAction,
     ClickButtonByCalculationProblemAction,

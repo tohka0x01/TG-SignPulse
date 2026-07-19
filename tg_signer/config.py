@@ -200,6 +200,8 @@ class SupportAction(int, Enum):
     REPLY_BY_IMAGE_RECOGNITION = 6  # AI image recognition then send text
     CLICK_BUTTON_BY_CALCULATION_PROBLEM = 7  # AI calculation then click button
     KEYWORD_NOTIFY = 8  # Listen for keywords
+    # 9 预留给 bot_cmd（关键词监控 continue_actions，非签到 SupportAction）
+    AWAIT_REPLY = 10  # 等待 Bot 回复（可编排独立步骤）
 
     @property
     def desc(self):
@@ -212,16 +214,13 @@ class SupportAction(int, Enum):
             SupportAction.REPLY_BY_IMAGE_RECOGNITION: "AI image recognition then send text",
             SupportAction.CLICK_BUTTON_BY_CALCULATION_PROBLEM: "AI calculation then click button",
             SupportAction.KEYWORD_NOTIFY: "关键词监听",
+            SupportAction.AWAIT_REPLY: "等待Bot回复",
         }[self]
 
 
 class SignAction(BaseModel):
     action: SupportAction
     delay: Optional[str] = None
-    # 发送后可选等待 bot 回复（秒）；0/缺省表示不等，行为与旧版一致
-    await_reply_seconds: Optional[float] = None
-    # 可选：回复文本需包含的关键词（空=任意非自己消息）
-    await_reply_match: Optional[str] = None
 
 
 class SendTextAction(SignAction):
@@ -284,6 +283,16 @@ class KeywordNotifyAction(SignAction):
     continue_actions: List[Dict[str, Any]] = Field(default_factory=list)
 
 
+class AwaitReplyAction(SignAction):
+    """可编排的「等待 Bot 回复」步骤，与发送动作解耦。"""
+
+    action: Literal[SupportAction.AWAIT_REPLY] = SupportAction.AWAIT_REPLY
+    # 最长等待秒数；缺省 30
+    timeout: Optional[float] = 30
+    # 可选：回复需包含的关键词（空=任意非自己消息）
+    match: Optional[str] = None
+
+
 ActionT: TypeAlias = Union[
     SendTextAction,
     SendDiceAction,
@@ -293,6 +302,7 @@ ActionT: TypeAlias = Union[
     ReplyByImageRecognitionAction,
     ClickButtonByCalculationProblemAction,
     KeywordNotifyAction,
+    AwaitReplyAction,
 ]
 
 
@@ -357,6 +367,13 @@ class SignChatV3(BaseJSONConfig):
                     action.text[:15] + "..." if len(action.text) > 15 else action.text
                 )
                 details = f"Click: {text_preview}"
+            elif isinstance(action, AwaitReplyAction):
+                try:
+                    timeout = float(action.timeout or 30)
+                except (TypeError, ValueError):
+                    timeout = 30.0
+                match = (action.match or "").strip()
+                details = f"Wait: {timeout:g}s" + (f" match={match}" if match else "")
 
             if details:
                 action_text = f"{i}. [{action_type}] {details}"
@@ -399,18 +416,9 @@ class SignChatV3(BaseJSONConfig):
             SupportAction.REPLY_BY_IMAGE_RECOGNITION,
             SupportAction.CLICK_BUTTON_BY_CALCULATION_PROBLEM,
             SupportAction.KEYWORD_NOTIFY,
+            SupportAction.AWAIT_REPLY,
         }
-        if any(action.action in response_actions for action in self.actions):
-            return True
-        # 发送后等待 bot 回复时需要 updates / 消息缓存
-        for action in self.actions:
-            try:
-                seconds = float(getattr(action, "await_reply_seconds", None) or 0)
-            except (TypeError, ValueError):
-                seconds = 0.0
-            if seconds > 0:
-                return True
-        return False
+        return any(action.action in response_actions for action in self.actions)
 
 
 class SignConfigV3(BaseJSONConfig):

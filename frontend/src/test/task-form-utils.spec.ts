@@ -207,6 +207,39 @@ describe('buildActions', () => {
   })
 })
 
+describe('await_reply action', () => {
+  it('解析 await_reply 动作 (action=10)', () => {
+    const raw: RawTaskAction = { action: 10, timeout: 20, match: '成功' }
+    const result = parseSingleAction(raw)
+    expect(result).toHaveLength(1)
+    expect(result[0].type).toBe('await_reply')
+    expect(result[0].awaitReplySeconds).toBe('20')
+    expect(result[0].awaitReplyMatch).toBe('成功')
+  })
+
+  it('await_reply 默认 timeout=30', () => {
+    const raw: RawTaskAction = { action: 10 }
+    const result = parseSingleAction(raw)
+    expect(result[0].awaitReplySeconds).toBe('30')
+  })
+
+  it('build await_reply 为 action=10', () => {
+    const item: TaskActionItem = {
+      id: 1,
+      type: 'await_reply',
+      value: '',
+      aiPrompt: '',
+      awaitReplySeconds: '12',
+      awaitReplyMatch: 'ok',
+    }
+    expect(buildSingleAction(item)).toEqual({
+      action: 10,
+      timeout: 12,
+      match: 'ok',
+    })
+  })
+})
+
 describe('debounce', () => {
   it('延迟执行函数', async () => {
     let count = 0

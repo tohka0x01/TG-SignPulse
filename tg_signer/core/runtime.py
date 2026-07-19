@@ -39,6 +39,7 @@ except ImportError:  # pragma: no cover
 
 from tg_signer.config import (
     ActionT,
+    AwaitReplyAction,
     BaseJSONConfig,
     ChooseOptionByImageAction,
     ClickButtonByCalculationProblemAction,
@@ -1416,6 +1417,14 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
             return "识图后发送文本"
         if isinstance(action, ClickButtonByCalculationProblemAction):
             return "计算答案后点击按钮"
+        if isinstance(action, AwaitReplyAction):
+            try:
+                timeout = float(action.timeout if action.timeout is not None else 30)
+            except (TypeError, ValueError):
+                timeout = 30.0
+            match = str(action.match or "").strip()
+            base = f"等待 Bot 回复（最多 {timeout:g} 秒）"
+            return base + (f"，需包含: {match}" if match else "")
         if isinstance(action, KeywordNotifyAction):
             keywords = ", ".join(
                 self._normalize_log_text(keyword, 24) for keyword in action.keywords[:3]
@@ -2364,21 +2373,6 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
             return clicked > 0
         return False
 
-    def _await_reply_seconds(self, action: ActionT) -> float:
-        raw = getattr(action, "await_reply_seconds", None)
-        if raw is None:
-            return 0.0
-        try:
-            return max(float(raw), 0.0)
-        except (TypeError, ValueError):
-            return 0.0
-
-    def _await_reply_match(self, action: ActionT) -> str:
-        raw = getattr(action, "await_reply_match", None)
-        if raw is None:
-            return ""
-        return str(raw).strip()
-
     def _message_is_from_self(self, message: Message) -> bool:
         if message is None:
             return True
@@ -2412,7 +2406,36 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
         body = f"{getattr(message, 'text', None) or ''} {getattr(message, 'caption', None) or ''}"
         return match_text.lower() in body.lower()
 
-    async def _await_bot_reply_after_send(
+    def _await_reply_baseline_message_id_from_cache(self, chat: SignChatV3) -> int:
+        """取当前缓存中最大消息 id。"""
+        messages_dict = self.context.chat_messages.get(chat.chat_id) or {}
+        max_id = 0
+        for message in messages_dict.values():
+            try:
+                mid = int(getattr(message, "id", 0) or 0)
+            except (TypeError, ValueError):
+                mid = 0
+            if mid > max_id:
+                max_id = mid
+        return max_id
+
+    async def _await_reply_baseline_message_id(self, chat: SignChatV3) -> int:
+        """等待开始时的消息 id 基线：只接受之后的新消息。"""
+        max_id = self._await_reply_baseline_message_id_from_cache(chat)
+        try:
+            async for message in self.app.get_chat_history(chat.chat_id, limit=1):
+                try:
+                    mid = int(getattr(message, "id", 0) or 0)
+                except (TypeError, ValueError):
+                    mid = 0
+                if mid > max_id:
+                    max_id = mid
+                break
+        except Exception:
+            pass
+        return max_id
+
+    async def _await_bot_reply(
         self,
         chat: SignChatV3,
         *,
@@ -2420,7 +2443,7 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
         match_text: str = "",
         min_message_id: int = 0,
     ) -> Optional[Message]:
-        """发送后等待 bot 回复。超时返回 None，不抛错。"""
+        """等待会话中出现符合条件的 Bot 回复。超时返回 None。"""
         timeout = max(float(timeout or 0), 0.0)
         if timeout <= 0:
             return None
@@ -2432,7 +2455,6 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
         deadline = time.perf_counter() + timeout
         history_limit = _read_positive_int_env("SIGN_TASK_HISTORY_LOOKBACK", 12, 3)
 
-        # 先扫缓存（updates 路径）
         while time.perf_counter() < deadline:
             messages_dict = self.context.chat_messages.get(chat.chat_id) or {}
             for message in reversed(list(messages_dict.values())):
@@ -2444,7 +2466,6 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
                 ):
                     self._log_received_target_message(message)
                     return message
-            # 再轻量扫历史兜底
             remaining = deadline - time.perf_counter()
             if remaining <= 0:
                 break
@@ -2459,11 +2480,9 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
                         match_text,
                         min_message_id=min_message_id,
                     ):
-                        # 写入缓存，便于后续步骤复用
                         self.context.chat_messages[chat.chat_id][message.id] = message
                         self._log_received_target_message(message)
                         return message
-                    # 历史按新到旧；遇到更旧 id 可提前停
                     msg_id = int(getattr(message, "id", 0) or 0)
                     if min_message_id and msg_id and msg_id < min_message_id:
                         break
@@ -2477,31 +2496,31 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
         self.log(f"未在 {timeout:g} 秒内等到 Bot 回复", level="WARNING")
         return None
 
-    async def _maybe_await_reply_after_send(
+    async def _run_await_reply_action(
         self,
         chat: SignChatV3,
-        action: ActionT,
-        sent_message: Any = None,
+        action: AwaitReplyAction,
     ) -> bool:
-        seconds = self._await_reply_seconds(action)
-        if seconds <= 0:
-            return True
-        min_id = 0
-        if sent_message is not None:
-            try:
-                min_id = int(getattr(sent_message, "id", 0) or 0)
-            except (TypeError, ValueError):
-                min_id = 0
-        reply = await self._await_bot_reply_after_send(
+        """独立「等待回复」步骤：超时视为失败，便于流程级重试。"""
+        try:
+            timeout = float(action.timeout if action.timeout is not None else 30)
+        except (TypeError, ValueError):
+            timeout = 30.0
+        timeout = max(timeout, 0.1)
+        match_text = str(action.match or "").strip()
+        min_id = await self._await_reply_baseline_message_id(chat)
+        reply = await self._await_bot_reply(
             chat,
-            timeout=seconds,
-            match_text=self._await_reply_match(action),
+            timeout=timeout,
+            match_text=match_text,
             min_message_id=min_id,
         )
-        if reply is not None:
-            summary = self._summarize_target_message(reply)
-            if summary:
-                self.log(f"任务对象最后一条消息: {summary}")
+        if reply is None:
+            return False
+        summary = self._summarize_target_message(reply)
+        if summary:
+            self.log(f"任务对象最后一条消息: {summary}")
+        self.context.waiting_message = reply
         return True
 
     async def wait_for(
@@ -2518,17 +2537,15 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
         if chat.message_thread_id is not None:
             kwargs["message_thread_id"] = chat.message_thread_id
         if isinstance(action, SendTextAction):
-            sent = await self.send_message(
+            return await self.send_message(
                 chat.chat_id, action.text, chat.delete_after, **kwargs
             )
-            await self._maybe_await_reply_after_send(chat, action, sent)
-            return sent
         elif isinstance(action, SendDiceAction):
-            sent = await self.send_dice(
+            return await self.send_dice(
                 chat.chat_id, action.dice, chat.delete_after, **kwargs
             )
-            await self._maybe_await_reply_after_send(chat, action, sent)
-            return sent
+        elif isinstance(action, AwaitReplyAction):
+            return await self._run_await_reply_action(chat, action)
         elif isinstance(action, KeywordNotifyAction):
             self.log("关键词监听通知动作为后台常驻监听配置，当前运行时跳过")
             return True

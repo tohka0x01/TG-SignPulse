@@ -15,6 +15,7 @@ const ACTION_TYPE_MAP: Record<number, TaskActionType> = {
   6: 'vision_send',
   7: 'calc_click',
   9: 'bot_cmd',
+  10: 'await_reply',
 }
 
 const DEFAULT_CMD_PREFIX = '/start'
@@ -72,15 +73,10 @@ export function parseSingleAction(raw: RawTaskAction): TaskActionItem[] {
     case 'calc_click':
       item.aiPrompt = raw.ai_prompt || ''
       break
-  }
-
-  if (type === 'send_text' || type === 'send_dice') {
-    if (raw.await_reply_seconds != null && Number(raw.await_reply_seconds) > 0) {
-      item.awaitReplySeconds = String(raw.await_reply_seconds)
-    }
-    if (raw.await_reply_match) {
-      item.awaitReplyMatch = String(raw.await_reply_match)
-    }
+    case 'await_reply':
+      item.awaitReplySeconds = raw.timeout != null ? String(raw.timeout) : '30'
+      item.awaitReplyMatch = raw.match || ''
+      break
   }
 
   items.push(item)
@@ -135,17 +131,13 @@ export function buildSingleAction(
       result.bot_username = action.value
       result.command_prefix = action.commandPrefix || DEFAULT_CMD_PREFIX
       break
-  }
-
-  // 发送后等待 Bot 回复（仅 send_text / send_dice）
-  if (action.type === 'send_text' || action.type === 'send_dice') {
-    const secs = Number(action.awaitReplySeconds)
-    if (Number.isFinite(secs) && secs > 0) {
-      result.await_reply_seconds = secs
-    }
-    const match = (action.awaitReplyMatch || '').trim()
-    if (match) {
-      result.await_reply_match = match
+    case 'await_reply': {
+      result.action = 10
+      const secs = Number(action.awaitReplySeconds)
+      result.timeout = Number.isFinite(secs) && secs > 0 ? secs : 30
+      const match = (action.awaitReplyMatch || '').trim()
+      if (match) result.match = match
+      break
     }
   }
 

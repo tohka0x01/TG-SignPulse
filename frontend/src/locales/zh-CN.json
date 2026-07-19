@@ -219,7 +219,7 @@
     "delay": "延迟",
     "textPlaceholder": "输入文本内容...",
     "delayPlaceholder": "秒数，例如 1 或 1-3",
-    "awaitReplySecondsPlaceholder": "等回复秒数，如 3",
+    "awaitReplySecondsPlaceholder": "最长等待秒数，如 30",
     "awaitReplyMatchPlaceholder": "回复需包含(可选)",
     "aiPromptPlaceholder": "AI 提示词 (可选)",
     "addAction": "添加动作",
@@ -228,7 +228,8 @@
     "refreshChats": "刷新列表",
     "loadingChats": "加载会话中...",
     "loadAccountsFailed": "加载账号列表失败",
-    "loadChatsFailed": "加载会话列表失败"
+    "loadChatsFailed": "加载会话列表失败",
+    "awaitReply": "等待Bot回复"
   },
   "taskModal": {
     "addTitle": "添加任务",
