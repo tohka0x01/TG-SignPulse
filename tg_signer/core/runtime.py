@@ -109,7 +109,8 @@ from tg_signer.core.client import (  # noqa: F401
     readable_message,
 )
 
-logger = logging.getLogger("tg_signer")
+# 与 client/cli/backend 捕获端统一为 tg-signer（下划线名会导致面板抓不到步骤日志）
+logger = logging.getLogger("tg-signer")
 _PYDANTIC_V2 = hasattr(BaseModel, "model_validate")
 
 

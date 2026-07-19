@@ -2652,8 +2652,17 @@ class SignTaskService:
         if run_id:
             self._active_logs[task_key].append(f"[run_id={run_id}]")
 
-        # 获取 logger 实例
-        tg_logger = logging.getLogger("tg-signer")
+        # 捕获 UserSigner 步骤日志：runtime/client 均写 tg-signer
+        # 兼容历史代码若仍用 tg_signer，双挂同一 handler，避免漏抓
+        tg_loggers = [
+            logging.getLogger("tg-signer"),
+            logging.getLogger("tg_signer"),
+        ]
+        # 去重（同名只挂一次）
+        _seen = set()
+        tg_loggers = [
+            lg for lg in tg_loggers if not (id(lg) in _seen or _seen.add(id(lg)))
+        ]
         log_handler: Optional[TaskLogHandler] = None
 
         success = False
@@ -2712,9 +2721,10 @@ class SignTaskService:
                     log_handler.setFormatter(
                         logging.Formatter("%(asctime)s - %(message)s")
                     )
-                    if tg_logger.getEffectiveLevel() > logging.INFO:
-                        tg_logger.setLevel(logging.INFO)
-                    tg_logger.addHandler(log_handler)
+                    for tg_logger in tg_loggers:
+                        if tg_logger.getEffectiveLevel() > logging.INFO:
+                            tg_logger.setLevel(logging.INFO)
+                        tg_logger.addHandler(log_handler)
 
                     _service_logger.debug(f"已获取账号锁 {account_name}，开始执行任务 {task_name}")
                     self._active_logs[task_key].append(
@@ -2861,7 +2871,11 @@ class SignTaskService:
             self._account_last_run_end[account_name] = time.time()
             try:
                 if log_handler is not None:
-                    tg_logger.removeHandler(log_handler)
+                    for tg_logger in tg_loggers:
+                        try:
+                            tg_logger.removeHandler(log_handler)
+                        except Exception:
+                            pass
 
                 # 保存执行记录
                 final_logs = list(self._active_logs.get(task_key, []))

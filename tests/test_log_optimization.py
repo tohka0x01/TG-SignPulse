@@ -250,6 +250,34 @@ class TestRunIdFormat:
         assert error_msg == "任务执行出错: 测试错误"
 
 
+class TestTaskStepLogCapture:
+    """任务步骤日志必须能被面板捕获（logger 名与 handler 对齐）。"""
+
+    def test_runtime_logger_name_is_tg_signer_hyphen(self):
+        from tg_signer.core import runtime as rt
+
+        assert rt.logger.name == "tg-signer"
+
+    def test_task_log_handler_captures_runtime_logger(self):
+        from backend.services.sign_task_backend import TaskLogHandler
+        from tg_signer.core import runtime as rt
+
+        sink: list[str] = []
+        handler = TaskLogHandler(sink)
+        handler.setLevel(logging.INFO)
+        old_level = rt.logger.level
+        rt.logger.setLevel(logging.INFO)
+        rt.logger.addHandler(handler)
+        try:
+            # 模拟 UserSigner.log 的写入路径
+            rt.logger.info("account-a task-t step 1/2 send_text")
+        finally:
+            rt.logger.removeHandler(handler)
+            rt.logger.setLevel(old_level)
+
+        assert any("step 1/2 send_text" in line for line in sink)
+
+
 # 运行测试的辅助函数
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
