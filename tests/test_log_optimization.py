@@ -373,5 +373,54 @@ class TestSuccessNotificationContent:
 
 
 # 运行测试的辅助函数
+
+
+    @pytest.mark.asyncio
+    async def test_success_push_skip_title(self, monkeypatch):
+        """预检跳过时应推送任务已跳过，并把收到回复带进正文。"""
+        from backend.services.sign_tasks import SignTaskService
+
+        captured: dict = {}
+
+        async def fake_send(**kwargs):
+            captured.update(kwargs)
+
+        class FakeConfig:
+            def get_global_settings(self):
+                return {
+                    "telegram_bot_notify_enabled": True,
+                    "telegram_bot_task_success_enabled": True,
+                    "telegram_bot_token": "tok",
+                    "telegram_bot_chat_id": "123",
+                }
+
+        monkeypatch.setattr(
+            "backend.services.config.get_config_service",
+            lambda: FakeConfig(),
+        )
+        monkeypatch.setattr(
+            "backend.services.push_notifications.send_telegram_bot_message",
+            fake_send,
+        )
+
+        svc = SignTaskService.__new__(SignTaskService)
+        await svc._send_success_notification(
+            account_name="tohka01",
+            task_name="OkEmbyBot",
+            message="",
+            last_target_message=None,
+            flow_logs=[
+                "收到回复：签到成功 | 签到日期 | 2026-07-19",
+                "检测到今日任务已完成，跳过任务对象: 签到成功",
+                "任务执行完成",
+            ],
+        )
+        text = captured.get("text") or ""
+        assert "任务已跳过" in text
+        assert "任务成功" not in text
+        assert "签到成功" in text
+        assert "tohka01" in text
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

@@ -279,23 +279,23 @@ class SignTaskService:
                             if not candidate:
                                 continue
 
-                        message_time = getattr(message, "date", None)
-                        from_user = getattr(message, "from_user", None)
-                        is_self = bool(getattr(from_user, "is_self", False))
+                            message_time = getattr(message, "date", None)
+                            from_user = getattr(message, "from_user", None)
+                            is_self = bool(getattr(from_user, "is_self", False))
 
-                        if not is_self:
-                            if best_timestamp is None or (
-                                message_time is not None and message_time > best_timestamp
+                            if not is_self:
+                                if best_timestamp is None or (
+                                    message_time is not None and message_time > best_timestamp
+                                ):
+                                    best_text = candidate
+                                    best_timestamp = message_time
+                                break
+
+                            if fallback_timestamp is None or (
+                                message_time is not None and message_time > fallback_timestamp
                             ):
-                                best_text = candidate
-                                best_timestamp = message_time
-                            break
-
-                        if fallback_timestamp is None or (
-                            message_time is not None and message_time > fallback_timestamp
-                        ):
-                            fallback_text = candidate
-                            fallback_timestamp = message_time
+                                fallback_text = candidate
+                                fallback_timestamp = message_time
                     except Exception:
                         continue
         except Exception:
@@ -1376,8 +1376,20 @@ class SignTaskService:
                     reply_text = reply_text[len(prefix) :].strip()
                     break
 
+            is_skip = bool(
+                flow_logs
+                and any(
+                    "检测到今日任务已完成" in str(line)
+                    for line in flow_logs
+                )
+            )
+            title = (
+                "TG-SignPulse 任务已跳过(今日已完成)"
+                if is_skip
+                else "TG-SignPulse 任务成功"
+            )
             text_body = (
-                "TG-SignPulse 任务成功\n"
+                f"{title}\n"
                 f"账号: {account_name}\n"
                 f"任务: {task_name}\n"
                 f"{reply_text}"
@@ -2940,7 +2952,11 @@ class SignTaskService:
                             self._active_logs.setdefault(task_key, []).append(error_msg)
                             output_str = "\n".join(final_logs)
 
+                if not last_reply:
+                    last_reply = (extract_last_target_message(final_logs) or "").strip()
                 last_target_message = extract_last_target_message(final_logs)
+                if not last_target_message and last_reply:
+                    last_target_message = last_reply
                 if success and not last_target_message and signer is not None:
                     try:
                         last_target_fetch_timeout = float(

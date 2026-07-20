@@ -11,6 +11,7 @@ import logging
 import os
 import pathlib
 import random
+import re
 import time
 import unicodedata
 from collections import Counter, defaultdict
@@ -1919,16 +1920,68 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
             return timezone(timedelta(hours=8))
 
     def _message_is_from_today(self, message: Message) -> bool:
-        """判断消息是否属于今天（按任务时区计算）。"""
-        message_date = getattr(message, "date", None) or getattr(
-            message, "edit_date", None
-        )
+        """判断消息是否属于今天（按任务时区计算，优先原始发送时间）。"""
+        message_date = getattr(message, "date", None)
+        if not isinstance(message_date, datetime):
+            # 无 date 时才退回 edit_date，避免“昨天发送、今天编辑”的成功文案被当成今日
+            message_date = getattr(message, "edit_date", None)
         if not isinstance(message_date, datetime):
             return False
         if message_date.tzinfo is None:
             message_date = message_date.replace(tzinfo=timezone.utc)
         task_tz = self._get_task_timezone()
         return message_date.astimezone(task_tz).date() == datetime.now(task_tz).date()
+
+    @staticmethod
+    def _extract_claimed_sign_dates(text: Optional[str]) -> list:
+        """从 bot 文案中提取显式签到/打卡日期。
+
+        例：OkEmby 「签到日期 | 2026-07-19」——文案日期与 Telegram 消息时间戳可能不一致。
+        """
+        raw = str(text or "")
+        if not raw:
+            return []
+        pattern = re.compile(
+            r"(?:签到日期|签到日|打卡日期|打卡日|签到时间|完成日期|完成日)"
+            r"\s*[:：|｜/\\-]?\s*"
+            r"(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})",
+            re.IGNORECASE,
+        )
+        found = []
+        for match in pattern.finditer(raw):
+            try:
+                y, mo, d = int(match.group(1)), int(match.group(2)), int(match.group(3))
+                found.append(datetime(y, mo, d).date())
+            except ValueError:
+                continue
+        return found
+
+    def _text_claims_non_today_sign_date(self, text: Optional[str]) -> bool:
+        """文案明确声明的签到日期若不是今天，则不能当作「今日已完成」。"""
+        claimed = self._extract_claimed_sign_dates(text)
+        if not claimed:
+            return False
+        task_tz = self._get_task_timezone()
+        today = datetime.now(task_tz).date()
+        return all(d != today for d in claimed)
+
+    def _is_today_terminal_success_message(self, message: Message) -> bool:
+        """今日已完成：消息时间属于今天 + 成功文案 + 文案未声明非今日日期。"""
+        if not self._message_is_from_today(message):
+            return False
+        if not self._message_has_terminal_success_text(message):
+            return False
+        body = "\n".join(
+            item
+            for item in [
+                getattr(message, "text", None),
+                getattr(message, "caption", None),
+            ]
+            if item
+        )
+        if self._text_claims_non_today_sign_date(body):
+            return False
+        return True
 
     async def _chat_has_today_terminal_success(
         self,
@@ -1950,9 +2003,7 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
             from_user = getattr(message, "from_user", None)
             if from_user is not None and not getattr(from_user, "is_bot", False):
                 continue
-            if self._message_is_from_today(
-                message
-            ) and self._message_has_terminal_success_text(message):
+            if self._is_today_terminal_success_message(message):
                 self.context.stop_reason = self._summarize_target_message(message)
                 self._log_received_target_message(message, prefix="收到回复")
                 return True
@@ -1967,9 +2018,7 @@ class UserSigner(BaseUserWorker[SignConfigV3]):
                 from_user = getattr(message, "from_user", None)
                 if from_user is not None and not getattr(from_user, "is_bot", False):
                     continue
-                if self._message_is_from_today(
-                    message
-                ) and self._message_has_terminal_success_text(message):
+                if self._is_today_terminal_success_message(message):
                     self.context.stop_reason = self._summarize_target_message(message)
                     self._log_received_target_message(message, prefix="收到回复")
                     return True

@@ -778,6 +778,39 @@ class TodayTerminalSuccessTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result)
 
 
+
+    async def test_claimed_sign_date_not_today_blocks_skip(self):
+        """消息时间戳是今天，但文案签到日期是昨天时，不应判定为今日已完成。"""
+        from tg_signer.core import UserSigner
+        from datetime import datetime, timedelta, timezone
+        from types import SimpleNamespace
+
+        signer = object.__new__(UserSigner)
+        signer.log = lambda *args, **kwargs: None
+        task_tz = signer._get_task_timezone()
+        yesterday = (datetime.now(task_tz).date() - timedelta(days=1)).isoformat()
+        message = SimpleNamespace(
+            date=datetime.now(timezone.utc),
+            edit_date=None,
+            text=f"签到成功 | 10 OK币 / 签到日期 | {yesterday}",
+            caption=None,
+        )
+        self.assertTrue(signer._message_is_from_today(message))
+        self.assertTrue(signer._message_has_terminal_success_text(message))
+        self.assertTrue(signer._text_claims_non_today_sign_date(message.text))
+        self.assertFalse(signer._is_today_terminal_success_message(message))
+
+    def test_extract_claimed_sign_dates_okemby_format(self):
+        from tg_signer.core import UserSigner
+        from datetime import date
+
+        signer = object.__new__(UserSigner)
+        dates = signer._extract_claimed_sign_dates(
+            "签到成功 | 10 OK币 / 签到日期 | 2026-07-19"
+        )
+        self.assertEqual(dates, [date(2026, 7, 19)])
+
+
 class SuccessTextDetectionTest(unittest.TestCase):
     """签到成功文本检测增强测试。"""
 
