@@ -89,6 +89,36 @@ class TestExtractLastTargetMessage:
         logs = ["step done text: hello world"]
         assert extract_last_target_message(logs) == "hello world"
 
+    def test_strips_account_task_prefix(self):
+        """UserSigner.log 会加账户/任务前缀，推送提取需先剥掉。"""
+        from backend.utils.task_logs import extract_last_target_message, normalize_log_line
+
+        raw = (
+            "账户「tohka01」- 任务「OkEmbyBot」: "
+            "收到回复：签到成功 | 10 OK币 / 当前持有 | 30 OK币"
+        )
+        assert normalize_log_line(raw) == (
+            "收到回复：签到成功 | 10 OK币 / 当前持有 | 30 OK币"
+        )
+        logs = [
+            "账户「tohka01」- 任务「OkEmbyBot」: 收到回复（按钮提示）：Done!",
+            raw,
+            "账户「tohka01」- 任务「OkEmbyBot」: 按钮「签到」后已检测到任务完成响应，将跳过后续动作",
+            "任务执行完成",
+        ]
+        assert extract_last_target_message(logs) == (
+            "签到成功 | 10 OK币 / 当前持有 | 30 OK币"
+        )
+
+    def test_strips_timestamp_and_account_prefix(self):
+        from backend.utils.task_logs import extract_last_target_message
+
+        logs = [
+            "2026-07-21 12:00:00,123 - 账户「tohka01」- 任务「OkEmbyBot」: "
+            "收到回复：签到成功 | 10 OK币",
+        ]
+        assert extract_last_target_message(logs) == "签到成功 | 10 OK币"
+
 
 class TestGetAccountLock:
     """get_account_lock() 测试"""

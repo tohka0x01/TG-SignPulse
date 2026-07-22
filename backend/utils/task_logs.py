@@ -4,13 +4,16 @@ import re
 from typing import Iterable
 
 _TIMESTAMP_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}.*? -\s*")
+# 与前端 sanitizeFlowLogLine 对齐：UserSigner.log 会强制加账户/任务上下文前缀
+_TASK_CONTEXT_PREFIX = re.compile(r"^账户「[^」]+」\s*-\s*任务「[^」]+」:\s*")
 
 
 def normalize_log_line(value: object) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
-    return _TIMESTAMP_PREFIX.sub("", text).strip()
+    text = _TIMESTAMP_PREFIX.sub("", text).strip()
+    return _TASK_CONTEXT_PREFIX.sub("", text).strip()
 
 
 def extract_last_target_message(flow_logs: Iterable[object] | None) -> str:
